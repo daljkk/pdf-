@@ -1,0 +1,46 @@
+import streamlit as st
+import fitz
+import re
+
+def extract_text_ordered(uploaded_file):
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    full_result = []
+
+    for page in doc:
+        # 블록 단위로 텍스트와 좌표(x, y) 추출
+        blocks = page.get_text("dict")["blocks"]
+        text_blocks = []
+        
+        for b in blocks:
+            if "lines" in b:
+                # 블록의 가장 위쪽(y), 오른쪽(x) 좌표를 기준으로 정렬
+                # 세로 쓰기는 x좌표가 큰 것부터, 그다음 y좌표 순으로 읽어야 함
+                x0, y0 = b["bbox"][:2] 
+                text = ""
+                for line in b["lines"]:
+                    for span in line["spans"]:
+                        text += span["text"]
+                text_blocks.append((x0, y0, text))
+        
+        # [핵심] x좌표(큰 것부터) -> y좌표 순으로 정렬
+        text_blocks.sort(key=lambda b: (-b[0], b[1]))
+        
+        page_text = "\n\n".join([b[2] for b in text_blocks]) # 문단 사이에 간격 추가
+        
+        # 정제 작업
+        page_text = re.sub(r'\d+', '', page_text)
+        page_text = re.sub(r'([.!?♡。…？♪])\s*', r'\1\n', page_text)
+        
+        full_result.append(page_text)
+        
+    return "\n\n".join(full_result)
+
+# Streamlit UI
+st.title("📄 일본어 세로 쓰기 PDF 변환기")
+uploaded_file = st.file_uploader("PDF 업로드", type="pdf")
+
+if uploaded_file and st.button("문단 유지하여 변환"):
+    with st.spinner("처리 중..."):
+        result = extract_text_ordered(uploaded_file)
+        st.download_button("텍스트 파일 다운로드", result, "result.txt")
+        st.text_area("미리보기", result, height=300)
